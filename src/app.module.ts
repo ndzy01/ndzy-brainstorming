@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
+    AiModule,
     TypeOrmModule.forRoot({
       type: 'postgres',
       port: 5432,
