@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', 'Noto Sans SC', ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #e2e8f0; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Markdown */
+.prose-custom h1, .prose-custom h2, .prose-custom h3 { color: #0f172a; font-weight: 600; margin-top: 1em; margin-bottom: 0.5em; }
+.prose-custom h1 { font-size: 1.5em; }
+.prose-custom h2 { font-size: 1.25em; }
+.prose-custom h3 { font-size: 1.1em; }
+.prose-custom p { margin-bottom: 0.75em; line-height: 1.8; color: #334155; }
+.prose-custom strong { color: #6366f1; font-weight: 600; }
+.prose-custom ul, .prose-custom ol { margin-left: 1.5em; margin-bottom: 0.75em; color: #334155; }
+.prose-custom li { margin-bottom: 0.25em; }
+.prose-custom code { background: #e2e8f0; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; color: #7c3aed; }
+.prose-custom pre { background: #1e293b; padding: 1em; border-radius: 8px; overflow-x: auto; margin: 0.75em 0; }
+.prose-custom pre code { background: none; padding: 0; color: #e2e8f0; }
+.prose-custom blockquote { border-left: 3px solid #6366f1; padding-left: 1em; color: #64748b; margin: 0.75em 0; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slide-up 0.3s ease-out; }
