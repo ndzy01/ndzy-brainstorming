@@ -50,6 +50,7 @@ export default function Interview() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [standardAnswers, setStandardAnswers] = useState<Record<number, { loading: boolean; content: string | null }>>({});
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -70,8 +71,18 @@ export default function Interview() {
 
   useEffect(() => { if (view === 'history') loadHistory(); }, [view, loadHistory]);
 
-  const extractSessionId = (text: string) => text.match(/<!--SESSION_ID:([a-f0-9-]+)-->/)?.[1] ?? null;
-  const cleanContent = (text: string) => text.replace(/<!--SESSION_ID:[a-f0-9-]+-->/g, '').trim();
+  /** 从响应流中提取所有标记（SESSION_ID / IS_OVER / ERROR）并清理干净正文 */
+  const parseMarkers = (text: string) => {
+    const sessionId = text.match(/<!--SESSION_ID:([a-f0-9-]+)-->/)?.[1] ?? null;
+    const isOver = text.includes('<!--IS_OVER:1-->');
+    const error = text.match(/<!--ERROR:(.+)-->/)?.[1] ?? null;
+    const clean = text
+      .replace(/<!--SESSION_ID:[a-f0-9-]+-->/g, '')
+      .replace(/<!--IS_OVER:[01]-->/g, '')
+      .replace(/<!--ERROR:.+?-->/g, '')
+      .trim();
+    return { sessionId, isOver, error, clean };
+  };
 
   const startInterview = useCallback(async () => {
     setView('chatting'); setMessages([]); setStreaming(true); setSessionId(null);
@@ -81,8 +92,10 @@ export default function Interview() {
         body: JSON.stringify({ anonymousId, position, difficulty, totalQuestions: questionCount }),
       });
       const text = await res.text();
-      setSessionId(extractSessionId(text));
-      setMessages([{ role: 'assistant', content: cleanContent(text) }]);
+      const { sessionId: sid, error, clean } = parseMarkers(text);
+      if (error) { showToast(`面试启动失败: ${error}`, 'error'); setView('config'); return; }
+      setSessionId(sid);
+      setMessages([{ role: 'assistant', content: clean }]);
       setProgress({ current: 1, total: questionCount });
     } catch { showToast('面试启动失败', 'error'); setView('config'); }
     finally { setStreaming(false); }
@@ -101,21 +114,36 @@ export default function Interview() {
         body: JSON.stringify({ anonymousId, sessionId: id }),
       });
       const text = await res.text();
-      setSessionId(extractSessionId(text) || id);
-      setMessages((prev) => [...prev, { role: 'assistant', content: cleanContent(text) }]);
-      setProgress((prev) => ({ ...prev, current: prev.current + 1 }));
+      const { sessionId: sid, isOver, error, clean } = parseMarkers(text);
+      if (error) { showToast(`续玩失败: ${error}`, 'error'); setView('history'); return; }
+      setSessionId(sid || id);
+      setMessages((prev) => [...prev, { role: 'assistant', content: clean }]);
+      if (isOver) {
+        setView('finished');
+        setProgress((prev) => ({ ...prev, current: prev.total }));
+      } else {
+        setProgress((prev) => ({ ...prev, current: prev.current + 1 }));
+      }
     } catch { showToast('续玩失败', 'error'); setView('history'); }
     finally { setStreaming(false); }
   }, [anonymousId]);
 
   const viewSession = useCallback(async (id: string) => {
-    setView('finished'); setStreaming(true);
+    setView('finished'); setStreaming(true); setStandardAnswers({});
     try {
       const res = await fetch(`/api/interview/session/${anonymousId}/${id}`);
       const detail = await res.json();
       setMessages(detail.messages || []);
       setSessionId(id);
       setProgress({ current: detail.totalQuestions, total: detail.totalQuestions });
+      // 预填已有的缓存答案
+      if (detail.standardAnswers) {
+        const cached: Record<number, { loading: boolean; content: string | null }> = {};
+        for (const [key, val] of Object.entries(detail.standardAnswers)) {
+          cached[Number(key)] = { loading: false, content: val as string };
+        }
+        setStandardAnswers(cached);
+      }
     } catch { showToast('加载会话失败', 'error'); setView('history'); }
     finally { setStreaming(false); }
   }, [anonymousId]);
@@ -131,10 +159,15 @@ export default function Interview() {
         body: JSON.stringify({ anonymousId, sessionId, answer: userMsg }),
       });
       const text = await res.text();
-      setMessages((prev) => [...prev, { role: 'assistant', content: text }]);
-      if (text.includes('总体评分') || text.includes('评价报告') || text.includes('学习建议')) {
+      const { isOver, error, clean } = parseMarkers(text);
+      if (error) { showToast(`发送失败: ${error}`, 'error'); return; }
+      setMessages((prev) => [...prev, { role: 'assistant', content: clean }]);
+      if (isOver) {
         setView('finished');
-      } else { setProgress((prev) => ({ ...prev, current: prev.current + 1 })); }
+        setProgress((prev) => ({ ...prev, current: prev.total }));
+      } else {
+        setProgress((prev) => ({ ...prev, current: prev.current + 1 }));
+      }
     } catch { showToast('发送失败', 'error'); }
     finally { setStreaming(false); inputRef.current?.focus(); }
   }, [input, sessionId, streaming, anonymousId]);
@@ -144,8 +177,23 @@ export default function Interview() {
     catch { showToast('删除失败', 'error'); }
   }, [anonymousId, loadHistory]);
 
+  /** 获取某个问题的标准答案 */
+  const fetchStandardAnswer = useCallback(async (questionIndex: number, forceRegenerate = false) => {
+    if (!sessionId) return;
+    setStandardAnswers((prev) => ({ ...prev, [questionIndex]: { loading: true, content: forceRegenerate ? null : prev[questionIndex]?.content } }));
+    try {
+      const res = await fetch('/api/interview/standard-answer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anonymousId, sessionId, questionIndex, forceRegenerate }),
+      });
+      const data = await res.json();
+      if (data.error) { showToast(data.error, 'error'); }
+      else { setStandardAnswers((prev) => ({ ...prev, [questionIndex]: { loading: false, content: data.answer } })); }
+    } catch { showToast('获取标准答案失败', 'error'); setStandardAnswers((prev) => ({ ...prev, [questionIndex]: { loading: false, content: null } })); }
+  }, [anonymousId, sessionId]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAnswer(); }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendAnswer(); }
   };
 
   const reset = () => { setView('config'); setMessages([]); setSessionId(null); setProgress({ current: 0, total: 0 }); };
@@ -274,29 +322,64 @@ export default function Interview() {
           )}
           <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-4 min-h-[400px] max-h-[60vh] overflow-y-auto shadow-sm">
             <div className="space-y-5">
-              {messages.map((msg, i) => (
+              {messages.map((msg, i) => {
+                const aiIndex = messages.filter((m, j) => m.role === 'assistant' && j <= i).length - 1;
+                const isQuestion = msg.role === 'assistant' && aiIndex < progress.total;
+                const ans = standardAnswers[aiIndex];
+                return (
                 <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                   <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base ${msg.role === 'assistant' ? 'bg-gradient-to-br from-indigo-500 to-purple-500' : 'bg-slate-200'}`}>
                     {msg.role === 'assistant' ? '🤖' : '👤'}
                   </div>
                   <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'assistant' ? 'bg-slate-50 text-slate-700 rounded-tl-md border border-slate-100' : 'bg-indigo-50 text-slate-700 rounded-tr-md'}`}>
                     {msg.role === 'assistant' ? (
-                      <div><div className="prose-custom"><ReactMarkdown>{msg.content}</ReactMarkdown></div><div className="mt-2"><CopyButton text={msg.content} /></div></div>
+                      <div>
+                        <div className="prose-custom"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <CopyButton text={msg.content} />
+                          {view === 'finished' && isQuestion && (
+                            <button
+                              onClick={() => fetchStandardAnswer(aiIndex)}
+                              disabled={ans?.loading}
+                              className="px-3 py-1 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-600 hover:bg-amber-100 transition-colors disabled:opacity-50"
+                            >
+                              {ans?.loading ? '获取中...' : '📋 标准答案'}
+                            </button>
+                          )}
+                        </div>
+                        {ans?.content && (
+                          <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-slate-600 leading-relaxed">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium text-amber-700">📋 标准答案 / 参考要点：</span>
+                              <button
+                                onClick={() => fetchStandardAnswer(aiIndex, true)}
+                                disabled={ans?.loading}
+                                className="text-[10px] text-amber-500 hover:text-amber-700 underline transition-colors disabled:opacity-50"
+                              >
+                                🔄 重新生成
+                              </button>
+                            </div>
+                            <div className="prose-custom"><ReactMarkdown>{ans.content}</ReactMarkdown></div>
+                          </div>
+                        )}
+                      </div>
                     ) : <p>{msg.content}</p>}
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {streaming && <Loading message="AI 思考中..." size="sm" />}
               <div ref={chatEndRef} />
             </div>
           </div>
           {(view === 'chatting' || view === 'resume') && (
-            <div className="flex gap-3">
-              <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="输入你的回答...（Enter 发送，Shift+Enter 换行）" rows={2} disabled={streaming} className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50" />
-              <button onClick={sendAnswer} disabled={!input.trim() || streaming} className="px-5 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-slate-300 disabled:text-slate-400 text-white font-medium transition-all flex-shrink-0">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
-              </button>
-            </div>
+              <div className="flex gap-3 items-end">
+                <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="输入你的回答...（Ctrl+Enter / ⌘+Enter 发送，Enter 换行）" rows={3} disabled={streaming} className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50" />
+                <button onClick={sendAnswer} disabled={!input.trim() || streaming} className="px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-400 text-white font-semibold transition-all shadow-lg shadow-indigo-500/25 flex-shrink-0 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
+                  <span className="text-sm">发送</span>
+                </button>
+              </div>
           )}
           {view === 'finished' && (
             <div className="text-center py-6"><div className="text-4xl mb-3">🎉</div><p className="text-slate-400 text-sm">以上是 AI 面试官的完整评价报告</p></div>

@@ -4,6 +4,7 @@ import { InterviewService } from './interview.service';
 import { StartInterviewDto } from './dto/start.dto';
 import { AnswerDto } from './dto/answer.dto';
 import { ResumeDto } from './dto/resume.dto';
+import { StandardAnswerDto } from './dto/standard-answer.dto';
 
 @Controller('interview')
 export class InterviewController {
@@ -18,17 +19,21 @@ export class InterviewController {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    let sessionId = '';
-    for await (const { chunk, sessionId: sid } of this.interviewService.createSession(
-      body.anonymousId,
-      body.position,
-      body.difficulty,
-      body.totalQuestions ?? 5,
-    )) {
-      if (sid) sessionId = sid;
-      res.write(chunk);
+    try {
+      let sessionId = '';
+      for await (const { chunk, sessionId: sid } of this.interviewService.createSession(
+        body.anonymousId,
+        body.position,
+        body.difficulty,
+        body.totalQuestions ?? 5,
+      )) {
+        if (sid) sessionId = sid;
+        res.write(chunk);
+      }
+      res.write(`\n<!--SESSION_ID:${sessionId}-->`);
+    } catch (e: any) {
+      res.write(`\n<!--ERROR:${e.message}-->`);
     }
-    res.write(`\n<!--SESSION_ID:${sessionId}-->`);
     res.end();
   }
 
@@ -41,12 +46,19 @@ export class InterviewController {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    for await (const { chunk } of this.interviewService.answer(
-      body.anonymousId,
-      body.sessionId,
-      body.answer,
-    )) {
-      res.write(chunk);
+    try {
+      let isOver = false;
+      for await (const { chunk, isOver: over } of this.interviewService.answer(
+        body.anonymousId,
+        body.sessionId,
+        body.answer,
+      )) {
+        isOver = over;
+        res.write(chunk);
+      }
+      res.write(`\n<!--IS_OVER:${isOver ? '1' : '0'}-->`);
+    } catch (e: any) {
+      res.write(`\n<!--ERROR:${e.message}-->`);
     }
     res.end();
   }
@@ -60,15 +72,21 @@ export class InterviewController {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    let sessionId = '';
-    for await (const { chunk, sessionId: sid } of this.interviewService.resume(
-      body.anonymousId,
-      body.sessionId,
-    )) {
-      if (sid) sessionId = sid;
-      res.write(chunk);
+    try {
+      let sessionId = '';
+      let isOver = false;
+      for await (const { chunk, sessionId: sid, isOver: over } of this.interviewService.resume(
+        body.anonymousId,
+        body.sessionId,
+      )) {
+        if (sid) sessionId = sid;
+        isOver = over;
+        res.write(chunk);
+      }
+      res.write(`\n<!--SESSION_ID:${sessionId}--><!--IS_OVER:${isOver ? '1' : '0'}-->`);
+    } catch (e: any) {
+      res.write(`\n<!--ERROR:${e.message}-->`);
     }
-    res.write(`\n<!--SESSION_ID:${sessionId}-->`);
     res.end();
   }
 
@@ -94,5 +112,16 @@ export class InterviewController {
     @Param('sessionId') sessionId: string,
   ) {
     return this.interviewService.deleteSession(anonymousId, sessionId);
+  }
+
+  /** 获取某个问题的标准答案（仅已结束的会话可用，优先返回缓存） */
+  @Post('standard-answer')
+  async getStandardAnswer(@Body() body: StandardAnswerDto) {
+    return this.interviewService.getStandardAnswer(
+      body.anonymousId,
+      body.sessionId,
+      body.questionIndex,
+      body.forceRegenerate,
+    );
   }
 }

@@ -82,7 +82,10 @@ export class InterviewService {
 
     if (session.currentQuestion >= session.totalQuestions) {
       prompt =
-        '面试已结束。请根据候选人的全部回答，给出综合评价报告。包含：优点、待改进项、技术能力评分(1-10)、沟通能力评分(1-10)、总体评分(1-10)、以及学习建议。用中文输出结构性报告，使用 Markdown 格式。';
+        '面试已结束。请根据候选人的全部回答，给出综合评价报告。\n' +
+        '一、优点\n二、待改进项\n三、技术能力评分(1-10)\n四、沟通能力评分(1-10)\n五、总体评分(1-10)\n六、学习建议\n' +
+        '七、标准答案：针对每个面试问题，给出该问题的理想回答要点或参考答案，帮助候选人理解面试官期望的回答方向。\n' +
+        '用中文输出结构性报告，使用 Markdown 格式。';
       isOver = true;
     } else {
       prompt = `这是第 ${session.currentQuestion + 1}/${session.totalQuestions} 个问题。请对候选人刚才的回答给出一两句简短反馈，然后提出下一个面试问题。用中文。`;
@@ -168,6 +171,45 @@ export class InterviewService {
     return { deleted: true };
   }
 
+  /** 获取已结束面试中某个问题的标准答案（优先走缓存） */
+  async getStandardAnswer(
+    anonymousId: string,
+    sessionId: string,
+    questionIndex: number,
+    forceRegenerate?: boolean,
+  ): Promise<{ answer: string; cached: boolean }> {
+    const session = await this.sessionRepo.findOne({
+      where: { id: sessionId, isCompleted: true },
+    });
+    if (!session) throw new NotFoundException('会话不存在或未结束');
+
+    const user = await this.userService.findOrCreate(anonymousId);
+    if (session.userId !== user.id)
+      throw new NotFoundException('无权访问此会话');
+
+    const cacheKey = String(questionIndex);
+    const cachedAnswers: Record<string, string> = (session.standardAnswers as Record<string, string>) ?? {};
+
+    // 非强制重新生成时，优先返回缓存
+    if (!forceRegenerate && cachedAnswers[cacheKey]) {
+      return { answer: cachedAnswers[cacheKey], cached: true };
+    }
+
+    const assistantMsgs = session.messages.filter((m) => m.role === 'assistant');
+    const question = assistantMsgs[questionIndex];
+    if (!question) throw new NotFoundException('问题不存在');
+
+    const prompt = `你是一位资深技术面试官。以下是你在面试中提出的一个问题，请给出该问题的标准答案或理想回答要点（用中文，简明扼要）：\n\n【面试问题】\n${question.content}\n\n【标准答案/参考要点】`;
+    const answer = await this.ai.ask(prompt);
+
+    // 写入缓存
+    cachedAnswers[cacheKey] = answer;
+    session.standardAnswers = cachedAnswers;
+    await this.sessionRepo.save(session);
+
+    return { answer, cached: false };
+  }
+
   /** 续玩：从断点继续面试（传入现有 session，流式返回下一题或报告） */
   async *resume(
     anonymousId: string,
@@ -175,7 +217,7 @@ export class InterviewService {
   ): AsyncGenerator<{
     chunk: string;
     sessionId: string;
-    isOver: false;
+    isOver: boolean;
   }> {
     const session = await this.sessionRepo.findOne({
       where: { id: sessionId, isCompleted: false },
@@ -186,8 +228,20 @@ export class InterviewService {
     if (session.userId !== user.id)
       throw new NotFoundException('无权访问此会话');
 
-    // 续玩提示 + 下一题
-    const prompt = `继续之前的面试。请先简短回顾上一题并过渡，然后提出第 ${session.currentQuestion + 1}/${session.totalQuestions} 个问题。用中文。`;
+    // 边界保护：如果所有题目已完成，直接走报告生成
+    let prompt: string;
+    let isOver = false;
+
+    if (session.currentQuestion >= session.totalQuestions) {
+      prompt =
+        '面试已结束。请根据候选人的全部回答，给出综合评价报告。\n' +
+        '一、优点\n二、待改进项\n三、技术能力评分(1-10)\n四、沟通能力评分(1-10)\n五、总体评分(1-10)\n六、学习建议\n' +
+        '七、标准答案：针对每个面试问题，给出该问题的理想回答要点或参考答案，帮助候选人理解面试官期望的回答方向。\n' +
+        '用中文输出结构性报告，使用 Markdown 格式。';
+      isOver = true;
+    } else {
+      prompt = `继续之前的面试。请先简短回顾上一题并过渡，然后提出第 ${session.currentQuestion + 1}/${session.totalQuestions} 个问题。用中文。`;
+    }
 
     const fullMessages = [
       ...session.messages,
@@ -197,14 +251,20 @@ export class InterviewService {
     let fullReply = '';
     for await (const chunk of this.ai.stream(fullMessages)) {
       fullReply += chunk;
-      yield { chunk, sessionId: session.id, isOver: false };
+      yield { chunk, sessionId: session.id, isOver };
     }
 
     session.messages = [
       ...session.messages,
       { role: 'assistant', content: fullReply },
     ];
-    session.currentQuestion += 1;
+
+    if (isOver) {
+      session.isCompleted = true;
+      session.report = fullReply;
+    } else {
+      session.currentQuestion += 1;
+    }
     await this.sessionRepo.save(session);
   }
 
