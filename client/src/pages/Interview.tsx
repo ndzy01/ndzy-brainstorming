@@ -106,9 +106,21 @@ export default function Interview() {
     try {
       const detailRes = await fetch(`/api/interview/session/${anonymousId}/${id}`);
       const detail = await detailRes.json();
-      setMessages(detail.messages || []);
+      const msgs: Message[] = detail.messages || [];
+      setMessages(msgs);
       setProgress({ current: detail.currentQuestion || 0, total: detail.totalQuestions });
+      setPosition(detail.position);
+      setDifficulty(detail.difficulty);
       setSessionId(id);
+
+      // 最后一条是面试官的问题，用户还没回答，直接展示让用户作答
+      const lastMsg = msgs[msgs.length - 1];
+      if (!lastMsg || lastMsg.role === 'assistant') {
+        setView('chatting');
+        return;
+      }
+
+      // 最后一条是用户的回答，需要请求下一题
       const res = await fetch('/api/interview/resume', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ anonymousId, sessionId: id }),
@@ -122,6 +134,7 @@ export default function Interview() {
         setView('finished');
         setProgress((prev) => ({ ...prev, current: prev.total }));
       } else {
+        setView('chatting');
         setProgress((prev) => ({ ...prev, current: prev.current + 1 }));
       }
     } catch { showToast('续玩失败', 'error'); setView('history'); }
