@@ -51,6 +51,7 @@ export default function Interview() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [standardAnswers, setStandardAnswers] = useState<Record<number, { loading: boolean; content: string | null }>>({});
+  const [expandedAnswers, setExpandedAnswers] = useState<Set<number>>(new Set());
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -299,11 +300,11 @@ export default function Interview() {
   const formatDate = (d: string) => new Date(d).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className={`${view === 'chatting' || view === 'finished' || view === 'resume' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-4 py-8`}>
-      <header className="flex items-center gap-4 mb-8">
-        <Link to="/" className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors">
+    <div className={`${view === 'chatting' || view === 'finished' || view === 'resume' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-3 sm:px-4 py-4 sm:py-8`}>
+      <header className="flex items-center gap-3 sm:gap-4 mb-5 sm:mb-8">
+        <Link to="/" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 transition-colors">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
-          返回首页
+          <span className="hidden sm:inline">返回首页</span>
         </Link>
         {view !== 'config' && view !== 'history' && (
           <button onClick={() => setView('history')} className="ml-auto text-sm text-slate-500 hover:text-indigo-600">面试记录</button>
@@ -327,13 +328,13 @@ export default function Interview() {
           ) : (
             <div className="space-y-3">
               {history.map((item) => (
-                <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-4 hover:border-slate-300 shadow-sm transition-colors">
+                <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 hover:border-slate-300 shadow-sm transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`w-1.5 h-1.5 rounded-full ${item.isCompleted ? 'bg-green-400' : 'bg-amber-400'}`} />
                       <span className="text-slate-700 font-medium truncate">{item.title || `${item.position} · ${item.difficulty}`}</span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
                       <span>{item.position} · {item.difficulty}</span>
                       <span>{item.currentQuestion}/{item.totalQuestions} 题</span>
                       <span>{formatDate(item.createdAt)}</span>
@@ -359,17 +360,17 @@ export default function Interview() {
       {/* Config */}
       {view === 'config' && (
         <div>
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-800 mb-2">技术面试官</h1>
-            <p className="text-slate-500">选择岗位和难度，AI 面试官将为你模拟真实面试场景</p>
+          <div className="mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-2">技术面试官</h1>
+            <p className="text-sm sm:text-base text-slate-500">选择岗位和难度，AI 面试官将为你模拟真实面试场景</p>
           </div>
-          <div className="space-y-6 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+          <div className="space-y-5 sm:space-y-6 bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-sm">
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-3">面试岗位</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {POSITIONS.map((p) => (
                   <button key={p.value} onClick={() => setPosition(p.value)}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-all
+                    className={`flex items-center gap-2 px-3 sm:px-4 py-3 rounded-xl border text-sm font-medium transition-all
                       ${position === p.value ? 'border-indigo-500 bg-indigo-50 text-indigo-600' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
                     <span className="text-base">{p.icon}</span>{p.label}
                   </button>
@@ -378,7 +379,7 @@ export default function Interview() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-3">难度等级</label>
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                 {DIFFICULTIES.map((d) => (
                   <button key={d.value} onClick={() => setDifficulty(d.value)}
                     className={`flex-1 flex flex-col items-start gap-1 px-4 py-3 rounded-xl border font-medium transition-all
@@ -394,7 +395,7 @@ export default function Interview() {
               <input type="range" min={2} max={6} value={questionCount} onChange={(e) => setQuestionCount(Number(e.target.value))} className="w-full h-2 rounded-full bg-slate-200 appearance-none cursor-pointer accent-indigo-500" />
               <div className="flex justify-between text-xs text-slate-400 mt-1"><span>2</span><span>6</span></div>
             </div>
-            <button onClick={startInterview} disabled={streaming} className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold text-lg hover:from-indigo-400 hover:to-purple-400 transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50">
+            <button onClick={startInterview} disabled={streaming} className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold text-base sm:text-lg hover:from-indigo-400 hover:to-purple-400 transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50">
               {streaming ? '准备中...' : '开始面试'}
             </button>
           </div>
@@ -427,7 +428,7 @@ export default function Interview() {
                 const ans = standardAnswers[aiIndex];
                 return (
                 <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base ${msg.role === 'assistant' ? 'bg-gradient-to-br from-indigo-500 to-purple-500' : 'bg-slate-200'}`}>
+                  <div className={`hidden sm:flex w-9 h-9 rounded-xl items-center justify-center flex-shrink-0 text-base self-start ${msg.role === 'assistant' ? 'bg-gradient-to-br from-indigo-500 to-purple-500' : 'bg-slate-200'}`}>
                     {msg.role === 'assistant' ? '🤖' : '👤'}
                   </div>
                   <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'assistant' ? 'bg-slate-50 text-slate-700 rounded-tl-md border border-slate-100 flex-1 min-w-0' : 'bg-indigo-50 text-slate-700 rounded-tr-md max-w-[70%]'}`}>
@@ -438,15 +439,26 @@ export default function Interview() {
                           <CopyButton text={msg.content} />
                           {view === 'finished' && isQuestion && (
                             <button
-                              onClick={() => fetchStandardAnswer(aiIndex)}
+                              onClick={() => {
+                                if (ans?.content) {
+                                  setExpandedAnswers((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(aiIndex)) next.delete(aiIndex); else next.add(aiIndex);
+                                    return next;
+                                  });
+                                } else {
+                                  fetchStandardAnswer(aiIndex);
+                                  setExpandedAnswers((prev) => new Set(prev).add(aiIndex));
+                                }
+                              }}
                               disabled={ans?.loading}
                               className="px-3 py-1 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-600 hover:bg-amber-100 transition-colors disabled:opacity-50"
                             >
-                              {ans?.loading ? '获取中...' : '📋 标准答案'}
+                              {ans?.loading ? '获取中...' : ans?.content ? (expandedAnswers.has(aiIndex) ? '📋 折叠答案' : '📋 展开答案') : '📋 标准答案'}
                             </button>
                           )}
                         </div>
-                        {ans?.content && (
+                        {ans?.content && expandedAnswers.has(aiIndex) && (
                           <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-slate-600 leading-relaxed">
                             <div className="flex items-center justify-between mb-1">
                               <span className="font-medium text-amber-700">📋 标准答案 / 参考要点：</span>
@@ -472,11 +484,11 @@ export default function Interview() {
             </div>
           </div>
           {(view === 'chatting' || view === 'resume') && (
-              <div className="flex gap-3 items-end">
-                <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="输入你的回答...（Ctrl+Enter / ⌘+Enter 发送，Enter 换行）" rows={3} disabled={streaming} className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50" />
-                <button onClick={sendAnswer} disabled={!input.trim() || streaming} className="px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-400 text-white font-semibold transition-all shadow-lg shadow-indigo-500/25 flex-shrink-0 flex items-center gap-2">
+              <div className="flex gap-2 sm:gap-3 items-end">
+                <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="输入你的回答...（⌘/Ctrl+Enter 发送）" rows={3} disabled={streaming} className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 sm:px-4 py-3 text-base sm:text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50" />
+                <button onClick={sendAnswer} disabled={!input.trim() || streaming} className="px-4 sm:px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-400 text-white font-semibold transition-all shadow-lg shadow-indigo-500/25 flex-shrink-0 flex items-center gap-2">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
-                  <span className="text-sm">发送</span>
+                  <span className="text-sm hidden sm:inline">发送</span>
                 </button>
               </div>
           )}
@@ -486,23 +498,23 @@ export default function Interview() {
                 <div className="text-4xl mb-2">🎉</div>
                 <p className="text-slate-400 text-sm">以上是 AI 面试官的完整评价报告</p>
               </div>
-              <div className="flex items-center justify-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
                 <button
                   onClick={() => handleExport('html')}
                   disabled={exporting}
-                  className="px-5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors inline-flex items-center gap-2 shadow-sm disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors inline-flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
                 >
                   <span>📄</span>{exporting ? '准备中...' : '导出 HTML'}
                 </button>
                 <button
                   onClick={() => handleExport('pdf')}
                   disabled={exporting}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-medium hover:from-indigo-400 hover:to-purple-400 transition-all shadow-lg shadow-indigo-500/25 inline-flex items-center gap-2 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-medium hover:from-indigo-400 hover:to-purple-400 transition-all shadow-lg shadow-indigo-500/25 inline-flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <span>🗂️</span>{exporting ? '准备中...' : '保存为 PDF'}
                 </button>
               </div>
-              <p className="text-center text-xs text-slate-400 mt-3">导出前会自动补齐所有标准答案；PDF 会打开打印预览，选「保存为 PDF」即可</p>
+              <p className="text-center text-xs text-slate-400 mt-3 px-4">导出前会自动补齐所有标准答案；PDF 会打开打印预览，选「保存为 PDF」即可</p>
             </div>
           )}
         </div>

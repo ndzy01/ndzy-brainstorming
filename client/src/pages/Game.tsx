@@ -183,11 +183,11 @@ export default function Game() {
   const formatDate = (d: string) => new Date(d).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <header className="flex items-center gap-4 mb-8">
-        <Link to="/" className="flex items-center gap-2 text-slate-500 hover:text-emerald-600 transition-colors">
+    <div className={`${view === 'playing' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-3 sm:px-4 py-4 sm:py-8`}>
+      <header className="flex items-center gap-3 sm:gap-4 mb-5 sm:mb-8">
+        <Link to="/" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-emerald-600 transition-colors">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
-          返回首页
+          <span className="hidden sm:inline">返回首页</span>
         </Link>
         {view === 'playing' && (
           <button onClick={() => setView('history')} className="ml-auto text-sm text-slate-500 hover:text-emerald-600">冒险记录</button>
@@ -211,13 +211,13 @@ export default function Game() {
           ) : (
             <div className="space-y-3">
               {history.map((item) => (
-                <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-4 hover:border-slate-300 shadow-sm transition-colors">
+                <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 hover:border-slate-300 shadow-sm transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`w-1.5 h-1.5 rounded-full ${item.isEnded ? 'bg-slate-400' : 'bg-emerald-400'}`} />
                       <span className="text-slate-700 font-medium truncate">{item.title || `${item.genre} · ${item.style}`}</span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
                       <span>{item.genre} · {item.style}</span>
                       <span>{item.turn} 回合</span>
                       <span>{item.isEnded ? '已完结' : '进行中'}</span>
@@ -243,17 +243,17 @@ export default function Game() {
       {/* Config */}
       {view === 'config' && (
         <div>
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-800 mb-2">互动小说</h1>
-            <p className="text-slate-500">选择一个世界观和叙事风格，AI 将为你创造独一无二的故事。</p>
+          <div className="mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-2">互动小说</h1>
+            <p className="text-sm sm:text-base text-slate-500">选择一个世界观和叙事风格，AI 将为你创造独一无二的故事。</p>
           </div>
-          <div className="space-y-6 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+          <div className="space-y-5 sm:space-y-6 bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-sm">
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-3">故事类型</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {GENRES.map((g) => (
                   <button key={g.value} onClick={() => setGenre(g.value)}
-                    className={`flex flex-col items-start gap-1 px-4 py-3 rounded-xl border text-left transition-all
+                    className={`flex flex-col items-start gap-1 px-3 sm:px-4 py-3 rounded-xl border text-left transition-all
                       ${genre === g.value ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
                     <span className="text-lg">{g.icon}</span><span className="text-sm font-medium">{g.label}</span><span className="text-xs opacity-60">{g.desc}</span>
                   </button>
@@ -282,14 +282,14 @@ export default function Game() {
       {/* Playing */}
       {view === 'playing' && (
         <div>
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-xl font-bold text-slate-800">{genre} · {style}</h1>
-            <div className="flex items-center gap-3">
-              {turn > 0 && <span className="text-sm text-slate-500">第 {turn} 回合</span>}
-              <button onClick={reset} className="px-4 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-sm text-slate-600 hover:bg-slate-200 transition-colors">新冒险</button>
+          <div className="flex items-center justify-between mb-4 sm:mb-6 gap-3">
+            <h1 className="text-base sm:text-xl font-bold text-slate-800 truncate min-w-0">{genre} · {style}</h1>
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              {turn > 0 && <span className="text-xs sm:text-sm text-slate-500">第 {turn} 回合</span>}
+              <button onClick={reset} className="px-3 sm:px-4 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs sm:text-sm text-slate-600 hover:bg-slate-200 transition-colors">新冒险</button>
             </div>
           </div>
-          <div className="bg-white border border-slate-200 rounded-2xl p-8 mb-4 min-h-[400px] max-h-[65vh] overflow-y-auto shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 mb-4 min-h-[360px] sm:min-h-[400px] h-[calc(100vh-260px)] sm:h-[calc(100vh-280px)] overflow-y-auto shadow-sm">
             <div className="space-y-6">
               {messages.map((msg, i) => (
                 <div key={i}>
@@ -311,17 +311,17 @@ export default function Game() {
             </div>
           </div>
           <div className="space-y-3">
-            <div className="flex gap-3">
+            <div className="flex gap-2 sm:gap-3">
               <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                placeholder="输入数字选择行动，或自由输入你想做的事...（Enter 发送）" rows={2} disabled={streaming}
-                className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:border-emerald-500 transition-colors disabled:opacity-50" />
-              <button onClick={sendAction} disabled={!input.trim() || streaming} className="px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-300 disabled:text-slate-400 text-white font-medium transition-all flex-shrink-0">
+                placeholder="输入数字选择行动，或自由输入..." rows={2} disabled={streaming}
+                className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 sm:px-4 py-3 text-base sm:text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:border-emerald-500 transition-colors disabled:opacity-50" />
+              <button onClick={sendAction} disabled={!input.trim() || streaming} className="px-4 sm:px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-300 disabled:text-slate-400 text-white font-medium transition-all flex-shrink-0">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
               </button>
             </div>
-            <div className="flex justify-between items-center">
-              <p className="text-xs text-slate-400">输入如 "1" 选择选项，也可以自由发挥</p>
-              <button onClick={() => setShowEndConfirm(true)} disabled={streaming} className="px-4 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-500 hover:text-red-500 transition-colors disabled:opacity-50">结束冒险</button>
+            <div className="flex justify-between items-center gap-2">
+              <p className="text-xs text-slate-400 hidden sm:block">输入如 "1" 选择选项，也可以自由发挥</p>
+              <button onClick={() => setShowEndConfirm(true)} disabled={streaming} className="ml-auto px-4 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-500 hover:text-red-500 transition-colors disabled:opacity-50">结束冒险</button>
             </div>
           </div>
           {showEndConfirm && (

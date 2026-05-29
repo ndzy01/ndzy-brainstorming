@@ -38,7 +38,7 @@ export default function Home() {
   const anonymousId = getAnonymousId();
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-20">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-20">
       {/* 匿名 ID 弹窗 */}
       {showIdModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowIdModal(false)}>
@@ -64,7 +64,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className="text-center mb-16">
+      <div className="text-center mb-10 sm:mb-16">
         <div className="inline-flex flex-col items-center gap-3 mb-6">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-slate-200 text-sm text-slate-500 shadow-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -83,17 +83,17 @@ export default function Home() {
         <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-slate-900">
           AI <span className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">工具箱</span>
         </h1>
-        <p className="text-slate-500 text-lg max-w-xl mx-auto">
+        <p className="text-slate-500 text-base sm:text-lg max-w-xl mx-auto px-2">
           选择下方的 AI 应用，体验大语言模型带来的无限可能
         </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
         {tools.map((tool) => (
           <button
             key={tool.id}
             onClick={() => navigate(`/${tool.id}`)}
-            className="group relative p-8 rounded-2xl border border-slate-200 bg-white shadow-sm
+            className="group relative p-6 sm:p-8 rounded-2xl border border-slate-200 bg-white shadow-sm
               text-left transition-all duration-300 cursor-pointer
               hover:shadow-xl hover:-translate-y-0.5"
           >
@@ -113,7 +113,7 @@ export default function Home() {
         ))}
       </div>
 
-      <p className="text-center text-slate-400 text-sm mt-16">
+      <p className="text-center text-slate-400 text-sm mt-10 sm:mt-16">
         所有对话由 DeepSeek 大模型生成，内容仅供参考
       </p>
     </div>
