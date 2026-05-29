@@ -44,6 +44,10 @@ export class GameSession {
   @Column({ default: false })
   isEnded: boolean;
 
+  /** 是否有请求正在处理中（并发锁） */
+  @Column({ default: false })
+  isProcessing: boolean;
+
   /** 会话标题，由 AI 自动生成或用户手动设置 */
   @Column({ type: 'varchar', length: 128, nullable: true })
   title: string | null;

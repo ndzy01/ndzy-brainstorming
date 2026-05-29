@@ -1,71 +1,85 @@
 import { Controller, Post, Body, Res, Get, Param, Delete } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { GameService } from './game.service';
 import { StartGameDto } from './dto/start.dto';
 import { PlayerActionDto } from './dto/action.dto';
 import { EndGameDto } from './dto/end.dto';
+import { initSse, sendSse, endSse } from '../common/sse';
 
 @Controller('game')
 export class GameController {
   constructor(private readonly gameService: GameService) {}
 
-  /** 流式开始新游戏 */
+  /** 流式开始新游戏（SSE） */
+  @Throttle({ ai: { limit: 10, ttl: 60_000 } })
   @Post('start')
   async startGame(
     @Body() body: StartGameDto,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
-
-    let sessionId = '';
-    for await (const { chunk, sessionId: sid } of this.gameService.startGame(
-      body.anonymousId,
-      body.genre,
-      body.style,
-    )) {
-      if (sid) sessionId = sid;
-      res.write(chunk);
+    initSse(res);
+    try {
+      let sessionId = '';
+      for await (const { chunk, sessionId: sid } of this.gameService.startGame(
+        body.anonymousId,
+        body.genre,
+        body.style,
+      )) {
+        if (sid) sessionId = sid;
+        sendSse(res, { type: 'chunk', content: chunk });
+      }
+      sendSse(res, { type: 'meta', sessionId });
+    } catch (e: any) {
+      sendSse(res, { type: 'error', message: e?.message ?? 'unknown error' });
+    } finally {
+      endSse(res);
     }
-    res.write(`\n<!--SESSION_ID:${sessionId}-->`);
-    res.end();
   }
 
-  /** 玩家行动 */
+  /** 玩家行动（SSE） */
+  @Throttle({ ai: { limit: 10, ttl: 60_000 } })
   @Post('action')
   async playerAction(
     @Body() body: PlayerActionDto,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
-
-    for await (const { chunk } of this.gameService.playerAction(
-      body.anonymousId,
-      body.sessionId,
-      body.action,
-    )) {
-      res.write(chunk);
+    initSse(res);
+    try {
+      for await (const { chunk } of this.gameService.playerAction(
+        body.anonymousId,
+        body.sessionId,
+        body.action,
+      )) {
+        sendSse(res, { type: 'chunk', content: chunk });
+      }
+    } catch (e: any) {
+      sendSse(res, { type: 'error', message: e?.message ?? 'unknown error' });
+    } finally {
+      endSse(res);
     }
-    res.end();
   }
 
-  /** 结束游戏 */
+  /** 结束游戏（SSE） */
+  @Throttle({ ai: { limit: 10, ttl: 60_000 } })
   @Post('end')
   async endGame(
     @Body() body: EndGameDto,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
-
-    for await (const { chunk } of this.gameService.endGame(
-      body.anonymousId,
-      body.sessionId,
-    )) {
-      res.write(chunk);
+    initSse(res);
+    try {
+      for await (const { chunk } of this.gameService.endGame(
+        body.anonymousId,
+        body.sessionId,
+      )) {
+        sendSse(res, { type: 'chunk', content: chunk });
+      }
+    } catch (e: any) {
+      sendSse(res, { type: 'error', message: e?.message ?? 'unknown error' });
+    } finally {
+      endSse(res);
     }
-    res.end();
   }
 
   /** 获取历史列表 */

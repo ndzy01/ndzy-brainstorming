@@ -5,6 +5,8 @@ import { getAnonymousId } from '../hooks/useAnonymousId';
 import Loading, { PageLoading } from '../components/Loading';
 import CopyButton from '../components/CopyButton';
 import { showToast } from '../components/Toast';
+import { postSse } from '../lib/sse';
+import { downloadReportHtml, printReportPdf } from '../lib/exportReport';
 
 interface Message {
   role: 'assistant' | 'user';
@@ -27,22 +29,20 @@ const POSITIONS = [
   { value: '前端开发', label: '前端开发', icon: '🖥' },
   { value: '后端开发', label: '后端开发', icon: '⚙️' },
   { value: '全栈开发', label: '全栈开发', icon: '🚀' },
-  { value: '算法工程师', label: '算法工程师', icon: '🧮' },
-  { value: 'DevOps/SRE', label: 'DevOps/SRE', icon: '☁️' },
-  { value: '数据分析师', label: '数据分析师', icon: '📊' },
+  { value: '测试工程师', label: '测试工程师', icon: '🧪' },
 ];
 
 const DIFFICULTIES = [
-  { value: '初级', label: '初级 (1-3年)', color: 'bg-green-500' },
-  { value: '中级', label: '中级 (3-5年)', color: 'bg-yellow-500' },
-  { value: '高级', label: '高级 (5年+)', color: 'bg-red-500' },
+  { value: '基础', label: '基础', sub: '校招 / 1-2 年', color: 'bg-green-500' },
+  { value: '进阶', label: '进阶', sub: '社招 3-5 年', color: 'bg-yellow-500' },
+  { value: '深度拷打', label: '深度拷打', sub: '资深 / 大厂高级', color: 'bg-red-500' },
 ];
 
 export default function Interview() {
   const [view, setView] = useState<'history' | 'config' | 'chatting' | 'finished' | 'resume'>('history');
   const [position, setPosition] = useState('前端开发');
-  const [difficulty, setDifficulty] = useState('中级');
-  const [questionCount, setQuestionCount] = useState(5);
+  const [difficulty, setDifficulty] = useState('进阶');
+  const [questionCount, setQuestionCount] = useState(3);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -71,35 +71,65 @@ export default function Interview() {
 
   useEffect(() => { if (view === 'history') loadHistory(); }, [view, loadHistory]);
 
-  /** 从响应流中提取所有标记（SESSION_ID / IS_OVER / ERROR）并清理干净正文 */
-  const parseMarkers = (text: string) => {
-    const sessionId = text.match(/<!--SESSION_ID:([a-f0-9-]+)-->/)?.[1] ?? null;
-    const isOver = text.includes('<!--IS_OVER:1-->');
-    const error = text.match(/<!--ERROR:(.+)-->/)?.[1] ?? null;
-    const clean = text
-      .replace(/<!--SESSION_ID:[a-f0-9-]+-->/g, '')
-      .replace(/<!--IS_OVER:[01]-->/g, '')
-      .replace(/<!--ERROR:.+?-->/g, '')
-      .trim();
-    return { sessionId, isOver, error, clean };
-  };
+  /**
+   * 通用 SSE 消费：边收边追加到最后一条 assistant 消息，获取 meta/error
+   * 返回 { sessionId, isOver, errored } 供调用方决定后续状态
+   */
+  const consumeSse = useCallback(
+    async (url: string, body: unknown, errPrefix: string) => {
+      // 预占一个空的 assistant 消息，后续流式追加
+      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+      let sessionId: string | undefined;
+      let isOver = false;
+      let errored = false;
+      try {
+        for await (const ev of postSse(url, body)) {
+          if (ev.type === 'chunk') {
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (last && last.role === 'assistant') {
+                next[next.length - 1] = { ...last, content: last.content + ev.content };
+              }
+              return next;
+            });
+          } else if (ev.type === 'meta') {
+            sessionId = ev.sessionId;
+            isOver = !!ev.isOver;
+          } else if (ev.type === 'error') {
+            errored = true;
+            // 回滚预占的空消息
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === 'assistant' && last.content === '') {
+                return prev.slice(0, -1);
+              }
+              return prev;
+            });
+            showToast(`${errPrefix}: ${ev.message}`, 'error');
+          }
+        }
+      } catch {
+        errored = true;
+        showToast(errPrefix, 'error');
+      }
+      return { sessionId, isOver, errored };
+    },
+    [],
+  );
 
   const startInterview = useCallback(async () => {
     setView('chatting'); setMessages([]); setStreaming(true); setSessionId(null);
-    try {
-      const res = await fetch('/api/interview/start', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anonymousId, position, difficulty, totalQuestions: questionCount }),
-      });
-      const text = await res.text();
-      const { sessionId: sid, error, clean } = parseMarkers(text);
-      if (error) { showToast(`面试启动失败: ${error}`, 'error'); setView('config'); return; }
-      setSessionId(sid);
-      setMessages([{ role: 'assistant', content: clean }]);
-      setProgress({ current: 1, total: questionCount });
-    } catch { showToast('面试启动失败', 'error'); setView('config'); }
-    finally { setStreaming(false); }
-  }, [anonymousId, position, difficulty, questionCount]);
+    const { sessionId: sid, errored } = await consumeSse(
+      '/api/interview/start',
+      { anonymousId, position, difficulty, totalQuestions: questionCount },
+      '面试启动失败',
+    );
+    setStreaming(false);
+    if (errored) { setView('config'); return; }
+    if (sid) setSessionId(sid);
+    setProgress({ current: 1, total: questionCount });
+  }, [anonymousId, position, difficulty, questionCount, consumeSse]);
 
   const resumeSession = useCallback(async (id: string) => {
     setView('resume'); setMessages([]); setStreaming(true);
@@ -117,19 +147,19 @@ export default function Interview() {
       const lastMsg = msgs[msgs.length - 1];
       if (!lastMsg || lastMsg.role === 'assistant') {
         setView('chatting');
+        setStreaming(false);
         return;
       }
 
       // 最后一条是用户的回答，需要请求下一题
-      const res = await fetch('/api/interview/resume', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anonymousId, sessionId: id }),
-      });
-      const text = await res.text();
-      const { sessionId: sid, isOver, error, clean } = parseMarkers(text);
-      if (error) { showToast(`续玩失败: ${error}`, 'error'); setView('history'); return; }
-      setSessionId(sid || id);
-      setMessages((prev) => [...prev, { role: 'assistant', content: clean }]);
+      const { sessionId: sid, isOver, errored } = await consumeSse(
+        '/api/interview/resume',
+        { anonymousId, sessionId: id },
+        '续玩失败',
+      );
+      setStreaming(false);
+      if (errored) { setView('history'); return; }
+      if (sid) setSessionId(sid);
       if (isOver) {
         setView('finished');
         setProgress((prev) => ({ ...prev, current: prev.total }));
@@ -137,9 +167,12 @@ export default function Interview() {
         setView('chatting');
         setProgress((prev) => ({ ...prev, current: prev.current + 1 }));
       }
-    } catch { showToast('续玩失败', 'error'); setView('history'); }
-    finally { setStreaming(false); }
-  }, [anonymousId]);
+    } catch {
+      showToast('续玩失败', 'error');
+      setView('history');
+      setStreaming(false);
+    }
+  }, [anonymousId, consumeSse]);
 
   const viewSession = useCallback(async (id: string) => {
     setView('finished'); setStreaming(true); setStandardAnswers({});
@@ -166,24 +199,21 @@ export default function Interview() {
     const userMsg = input.trim(); setInput('');
     setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
     setStreaming(true);
-    try {
-      const res = await fetch('/api/interview/answer', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anonymousId, sessionId, answer: userMsg }),
-      });
-      const text = await res.text();
-      const { isOver, error, clean } = parseMarkers(text);
-      if (error) { showToast(`发送失败: ${error}`, 'error'); return; }
-      setMessages((prev) => [...prev, { role: 'assistant', content: clean }]);
-      if (isOver) {
-        setView('finished');
-        setProgress((prev) => ({ ...prev, current: prev.total }));
-      } else {
-        setProgress((prev) => ({ ...prev, current: prev.current + 1 }));
-      }
-    } catch { showToast('发送失败', 'error'); }
-    finally { setStreaming(false); inputRef.current?.focus(); }
-  }, [input, sessionId, streaming, anonymousId]);
+    const { isOver, errored } = await consumeSse(
+      '/api/interview/answer',
+      { anonymousId, sessionId, answer: userMsg },
+      '发送失败',
+    );
+    setStreaming(false);
+    inputRef.current?.focus();
+    if (errored) return;
+    if (isOver) {
+      setView('finished');
+      setProgress((prev) => ({ ...prev, current: prev.total }));
+    } else {
+      setProgress((prev) => ({ ...prev, current: prev.current + 1 }));
+    }
+  }, [input, sessionId, streaming, anonymousId, consumeSse]);
 
   const deleteSession = useCallback(async (id: string) => {
     try { await fetch(`/api/interview/session/${anonymousId}/${id}`, { method: 'DELETE' }); showToast('已删除', 'success'); loadHistory(); }
@@ -205,6 +235,61 @@ export default function Interview() {
     } catch { showToast('获取标准答案失败', 'error'); setStandardAnswers((prev) => ({ ...prev, [questionIndex]: { loading: false, content: null } })); }
   }, [anonymousId, sessionId]);
 
+  /** 导出前批量补齐所有标准答案（串行避免压溃后端） */
+  const [exporting, setExporting] = useState(false);
+  const prepareExportData = useCallback(async () => {
+    if (!sessionId) return null;
+    const total = progress.total;
+    const missing: number[] = [];
+    for (let i = 0; i < total; i++) {
+      if (!standardAnswers[i]?.content) missing.push(i);
+    }
+
+    // 串行拉取（后端有限流，且同 session 有锁）。使用临时 map 避免依赖 React state 快照。
+    const fetched: Record<number, string> = {};
+    Object.entries(standardAnswers).forEach(([k, v]) => { if (v.content) fetched[Number(k)] = v.content; });
+
+    for (const idx of missing) {
+      setStandardAnswers((prev) => ({ ...prev, [idx]: { loading: true, content: prev[idx]?.content ?? null } }));
+      try {
+        const res = await fetch('/api/interview/standard-answer', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ anonymousId, sessionId, questionIndex: idx, forceRegenerate: false }),
+        });
+        const data = await res.json();
+        if (data.answer) {
+          fetched[idx] = data.answer;
+          setStandardAnswers((prev) => ({ ...prev, [idx]: { loading: false, content: data.answer } }));
+        } else {
+          setStandardAnswers((prev) => ({ ...prev, [idx]: { loading: false, content: prev[idx]?.content ?? null } }));
+        }
+      } catch {
+        setStandardAnswers((prev) => ({ ...prev, [idx]: { loading: false, content: prev[idx]?.content ?? null } }));
+      }
+    }
+
+    return {
+      position,
+      difficulty,
+      totalQuestions: total,
+      messages,
+      standardAnswers: fetched,
+    };
+  }, [anonymousId, sessionId, progress.total, standardAnswers, position, difficulty, messages]);
+
+  const handleExport = useCallback(async (mode: 'html' | 'pdf') => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const data = await prepareExportData();
+      if (!data) return;
+      if (mode === 'html') downloadReportHtml(data);
+      else printReportPdf(data);
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting, prepareExportData]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendAnswer(); }
   };
@@ -214,7 +299,7 @@ export default function Interview() {
   const formatDate = (d: string) => new Date(d).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
+    <div className={`${view === 'chatting' || view === 'finished' || view === 'resume' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto px-4 py-8`}>
       <header className="flex items-center gap-4 mb-8">
         <Link to="/" className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
@@ -296,17 +381,18 @@ export default function Interview() {
               <div className="flex gap-3">
                 {DIFFICULTIES.map((d) => (
                   <button key={d.value} onClick={() => setDifficulty(d.value)}
-                    className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border font-medium transition-all
+                    className={`flex-1 flex flex-col items-start gap-1 px-4 py-3 rounded-xl border font-medium transition-all
                       ${difficulty === d.value ? 'border-slate-300 bg-slate-100 text-slate-800' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
-                    <span className={`w-2.5 h-2.5 rounded-full ${d.color}`} />{d.label}
+                    <span className="flex items-center gap-2"><span className={`w-2.5 h-2.5 rounded-full ${d.color}`} />{d.label}</span>
+                    <span className="text-xs text-slate-400 font-normal">{d.sub}</span>
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-600 mb-3">题目数量: <span className="text-indigo-500">{questionCount}</span> 题</label>
-              <input type="range" min={3} max={10} value={questionCount} onChange={(e) => setQuestionCount(Number(e.target.value))} className="w-full h-2 rounded-full bg-slate-200 appearance-none cursor-pointer accent-indigo-500" />
-              <div className="flex justify-between text-xs text-slate-400 mt-1"><span>3</span><span>10</span></div>
+              <label className="block text-sm font-medium text-slate-600 mb-3">题目数量: <span className="text-indigo-500">{questionCount}</span> 题 <span className="text-xs text-slate-400 font-normal">（建议 3 题，深度优先）</span></label>
+              <input type="range" min={2} max={6} value={questionCount} onChange={(e) => setQuestionCount(Number(e.target.value))} className="w-full h-2 rounded-full bg-slate-200 appearance-none cursor-pointer accent-indigo-500" />
+              <div className="flex justify-between text-xs text-slate-400 mt-1"><span>2</span><span>6</span></div>
             </div>
             <button onClick={startInterview} disabled={streaming} className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold text-lg hover:from-indigo-400 hover:to-purple-400 transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50">
               {streaming ? '准备中...' : '开始面试'}
@@ -333,7 +419,7 @@ export default function Interview() {
               <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500" style={{ width: `${(progress.current / progress.total) * 100}%` }} />
             </div>
           )}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-4 min-h-[400px] max-h-[60vh] overflow-y-auto shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-4 min-h-[500px] h-[calc(100vh-280px)] overflow-y-auto shadow-sm">
             <div className="space-y-5">
               {messages.map((msg, i) => {
                 const aiIndex = messages.filter((m, j) => m.role === 'assistant' && j <= i).length - 1;
@@ -344,7 +430,7 @@ export default function Interview() {
                   <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base ${msg.role === 'assistant' ? 'bg-gradient-to-br from-indigo-500 to-purple-500' : 'bg-slate-200'}`}>
                     {msg.role === 'assistant' ? '🤖' : '👤'}
                   </div>
-                  <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'assistant' ? 'bg-slate-50 text-slate-700 rounded-tl-md border border-slate-100' : 'bg-indigo-50 text-slate-700 rounded-tr-md'}`}>
+                  <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'assistant' ? 'bg-slate-50 text-slate-700 rounded-tl-md border border-slate-100 flex-1 min-w-0' : 'bg-indigo-50 text-slate-700 rounded-tr-md max-w-[70%]'}`}>
                     {msg.role === 'assistant' ? (
                       <div>
                         <div className="prose-custom"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
@@ -395,7 +481,29 @@ export default function Interview() {
               </div>
           )}
           {view === 'finished' && (
-            <div className="text-center py-6"><div className="text-4xl mb-3">🎉</div><p className="text-slate-400 text-sm">以上是 AI 面试官的完整评价报告</p></div>
+            <div className="py-6">
+              <div className="text-center mb-5">
+                <div className="text-4xl mb-2">🎉</div>
+                <p className="text-slate-400 text-sm">以上是 AI 面试官的完整评价报告</p>
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  onClick={() => handleExport('html')}
+                  disabled={exporting}
+                  className="px-5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors inline-flex items-center gap-2 shadow-sm disabled:opacity-50"
+                >
+                  <span>📄</span>{exporting ? '准备中...' : '导出 HTML'}
+                </button>
+                <button
+                  onClick={() => handleExport('pdf')}
+                  disabled={exporting}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-medium hover:from-indigo-400 hover:to-purple-400 transition-all shadow-lg shadow-indigo-500/25 inline-flex items-center gap-2 disabled:opacity-50"
+                >
+                  <span>🗂️</span>{exporting ? '准备中...' : '保存为 PDF'}
+                </button>
+              </div>
+              <p className="text-center text-xs text-slate-400 mt-3">导出前会自动补齐所有标准答案；PDF 会打开打印预览，选「保存为 PDF」即可</p>
+            </div>
           )}
         </div>
       )}

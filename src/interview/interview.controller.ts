@@ -1,24 +1,25 @@
 import { Controller, Post, Body, Res, Get, Param, Delete } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { InterviewService } from './interview.service';
 import { StartInterviewDto } from './dto/start.dto';
 import { AnswerDto } from './dto/answer.dto';
 import { ResumeDto } from './dto/resume.dto';
 import { StandardAnswerDto } from './dto/standard-answer.dto';
+import { initSse, sendSse, endSse } from '../common/sse';
 
 @Controller('interview')
 export class InterviewController {
   constructor(private readonly interviewService: InterviewService) {}
 
-  /** 流式创建新面试 */
+  /** 流式创建新面试（SSE） */
+  @Throttle({ ai: { limit: 10, ttl: 60_000 } })
   @Post('start')
   async startInterview(
     @Body() body: StartInterviewDto,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
-
+    initSse(res);
     try {
       let sessionId = '';
       for await (const { chunk, sessionId: sid } of this.interviewService.createSession(
@@ -28,24 +29,24 @@ export class InterviewController {
         body.totalQuestions ?? 5,
       )) {
         if (sid) sessionId = sid;
-        res.write(chunk);
+        sendSse(res, { type: 'chunk', content: chunk });
       }
-      res.write(`\n<!--SESSION_ID:${sessionId}-->`);
+      sendSse(res, { type: 'meta', sessionId, isOver: false });
     } catch (e: any) {
-      res.write(`\n<!--ERROR:${e.message}-->`);
+      sendSse(res, { type: 'error', message: e?.message ?? 'unknown error' });
+    } finally {
+      endSse(res);
     }
-    res.end();
   }
 
-  /** 流式回答 */
+  /** 流式回答（SSE） */
+  @Throttle({ ai: { limit: 10, ttl: 60_000 } })
   @Post('answer')
   async answer(
     @Body() body: AnswerDto,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
-
+    initSse(res);
     try {
       let isOver = false;
       for await (const { chunk, isOver: over } of this.interviewService.answer(
@@ -54,24 +55,24 @@ export class InterviewController {
         body.answer,
       )) {
         isOver = over;
-        res.write(chunk);
+        sendSse(res, { type: 'chunk', content: chunk });
       }
-      res.write(`\n<!--IS_OVER:${isOver ? '1' : '0'}-->`);
+      sendSse(res, { type: 'meta', isOver });
     } catch (e: any) {
-      res.write(`\n<!--ERROR:${e.message}-->`);
+      sendSse(res, { type: 'error', message: e?.message ?? 'unknown error' });
+    } finally {
+      endSse(res);
     }
-    res.end();
   }
 
-  /** 续玩流式 */
+  /** 续玩流式（SSE） */
+  @Throttle({ ai: { limit: 10, ttl: 60_000 } })
   @Post('resume')
   async resume(
     @Body() body: ResumeDto,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
-
+    initSse(res);
     try {
       let sessionId = '';
       let isOver = false;
@@ -81,13 +82,14 @@ export class InterviewController {
       )) {
         if (sid) sessionId = sid;
         isOver = over;
-        res.write(chunk);
+        sendSse(res, { type: 'chunk', content: chunk });
       }
-      res.write(`\n<!--SESSION_ID:${sessionId}--><!--IS_OVER:${isOver ? '1' : '0'}-->`);
+      sendSse(res, { type: 'meta', sessionId, isOver });
     } catch (e: any) {
-      res.write(`\n<!--ERROR:${e.message}-->`);
+      sendSse(res, { type: 'error', message: e?.message ?? 'unknown error' });
+    } finally {
+      endSse(res);
     }
-    res.end();
   }
 
   /** 获取历史列表 */
@@ -115,6 +117,7 @@ export class InterviewController {
   }
 
   /** 获取某个问题的标准答案（仅已结束的会话可用，优先返回缓存） */
+  @Throttle({ ai: { limit: 10, ttl: 60_000 } })
   @Post('standard-answer')
   async getStandardAnswer(@Body() body: StandardAnswerDto) {
     return this.interviewService.getStandardAnswer(

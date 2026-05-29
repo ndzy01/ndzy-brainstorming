@@ -5,6 +5,7 @@ import { getAnonymousId } from '../hooks/useAnonymousId';
 import Loading, { PageLoading } from '../components/Loading';
 import CopyButton from '../components/CopyButton';
 import { showToast } from '../components/Toast';
+import { postSse } from '../lib/sse';
 
 interface Message {
   role: 'assistant' | 'user';
@@ -72,55 +73,89 @@ export default function Game() {
 
   useEffect(() => { if (view === 'history') loadHistory(); }, [view, loadHistory]);
 
-  const extractSessionId = (text: string) => text.match(/<!--SESSION_ID:([a-f0-9-]+)-->/)?.[1] ?? null;
-  const cleanContent = (text: string) => text.replace(/<!--SESSION_ID:[a-f0-9-]+-->/g, '').trim();
+  /**
+   * 通用 SSE 消费：边收边追加到最后一条 assistant 消息
+   */
+  const consumeSse = useCallback(
+    async (url: string, body: unknown, errPrefix: string) => {
+      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+      let sessionId: string | undefined;
+      let errored = false;
+      try {
+        for await (const ev of postSse(url, body)) {
+          if (ev.type === 'chunk') {
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (last && last.role === 'assistant') {
+                next[next.length - 1] = { ...last, content: last.content + ev.content };
+              }
+              return next;
+            });
+          } else if (ev.type === 'meta') {
+            sessionId = ev.sessionId;
+          } else if (ev.type === 'error') {
+            errored = true;
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === 'assistant' && last.content === '') {
+                return prev.slice(0, -1);
+              }
+              return prev;
+            });
+            showToast(`${errPrefix}: ${ev.message}`, 'error');
+          }
+        }
+      } catch {
+        errored = true;
+        showToast(errPrefix, 'error');
+      }
+      return { sessionId, errored };
+    },
+    [],
+  );
 
   const startGame = useCallback(async () => {
     setView('playing'); setMessages([]); setTurn(0); setStreaming(true); setSessionId(null);
-    try {
-      const res = await fetch('/api/game/start', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anonymousId, genre, style }),
-      });
-      const text = await res.text();
-      setSessionId(extractSessionId(text));
-      setMessages([{ role: 'assistant', content: cleanContent(text) }]);
-      setTurn(1);
-    } catch { showToast('游戏启动失败', 'error'); setView('config'); }
-    finally { setStreaming(false); }
-  }, [anonymousId, genre, style]);
+    const { sessionId: sid, errored } = await consumeSse(
+      '/api/game/start',
+      { anonymousId, genre, style },
+      '游戏启动失败',
+    );
+    setStreaming(false);
+    if (errored) { setView('config'); return; }
+    if (sid) setSessionId(sid);
+    setTurn(1);
+  }, [anonymousId, genre, style, consumeSse]);
 
   const sendAction = useCallback(async () => {
     if (!input.trim() || !sessionId || streaming) return;
     const action = input.trim(); setInput('');
     setMessages((prev) => [...prev, { role: 'user', content: `▸ ${action}` }]);
     setStreaming(true);
-    try {
-      const res = await fetch('/api/game/action', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anonymousId, sessionId, action }),
-      });
-      const text = await res.text();
-      setMessages((prev) => [...prev, { role: 'assistant', content: text }]);
-      setTurn((prev) => prev + 1);
-    } catch { showToast('行动失败', 'error'); }
-    finally { setStreaming(false); inputRef.current?.focus(); }
-  }, [input, sessionId, streaming, anonymousId]);
+    const { errored } = await consumeSse(
+      '/api/game/action',
+      { anonymousId, sessionId, action },
+      '行动失败',
+    );
+    setStreaming(false);
+    inputRef.current?.focus();
+    if (!errored) setTurn((prev) => prev + 1);
+  }, [input, sessionId, streaming, anonymousId, consumeSse]);
 
   const endGame = useCallback(async () => {
     if (!sessionId) return; setStreaming(true); setShowEndConfirm(false);
-    try {
-      const res = await fetch('/api/game/end', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anonymousId, sessionId }),
-      });
-      const text = await res.text();
-      setMessages((prev) => [...prev, { role: 'assistant', content: text }]);
+    const { errored } = await consumeSse(
+      '/api/game/end',
+      { anonymousId, sessionId },
+      '结束失败',
+    );
+    setStreaming(false);
+    if (!errored) {
       setTurn((prev) => prev + 1);
       showToast('故事已完结', 'success');
-    } catch { showToast('结束失败', 'error'); }
-    finally { setStreaming(false); }
-  }, [sessionId, anonymousId]);
+    }
+  }, [sessionId, anonymousId, consumeSse]);
 
   const openSession = useCallback(async (id: string) => {
     setView('playing'); setMessages([]); setStreaming(true);

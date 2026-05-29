@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -11,6 +13,14 @@ import { InterviewSession } from './entities/interview-session.entity';
 import { GameSession } from './entities/game-session.entity';
 
 const imports: any[] = [
+  ThrottlerModule.forRoot({
+    throttlers: [
+      // 默认全局限流：每分钟 60 次（适用于历史/会话读取等普通请求）
+      { name: 'default', ttl: 60_000, limit: 60 },
+      // AI 限流：每分钟 10 次（用于成本敏感的 LLM 流式接口）
+      { name: 'ai', ttl: 60_000, limit: 10 },
+    ],
+  }),
   AiModule,
   UserModule,
   InterviewModule,
@@ -38,5 +48,8 @@ if (process.env.NODE_ENV === 'production') {
   );
 }
 
-@Module({ imports })
+@Module({
+  imports,
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+})
 export class AppModule {}

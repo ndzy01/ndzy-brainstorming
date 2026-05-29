@@ -44,6 +44,10 @@ export class InterviewSession {
   @Column({ default: false })
   isCompleted: boolean;
 
+  /** 是否有请求正在处理中（并发锁） */
+  @Column({ default: false })
+  isProcessing: boolean;
+
   /** AI 生成的面试表现评估报告 */
   @Column({ type: 'text', nullable: true })
   report: string | null;
