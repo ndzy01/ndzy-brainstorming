@@ -58,6 +58,7 @@ export default function Home() {
     setAnonId(v);
     setImportMode(false);
     setImportValue('');
+    setShowIdModal(false);
     showToast('已切换匿名 ID', 'success');
   };
 
