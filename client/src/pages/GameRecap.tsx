@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useParams, useLocation } from 'react-router-dom';
 
 interface Message {
   role: 'assistant' | 'user';
@@ -31,6 +31,7 @@ function parseScene(text: string): { narrative: string } {
 }
 
 export default function GameRecap() {
+  const { sessionId } = useParams<{ sessionId: string }>();
   const location = useLocation();
   const state = location.state as LocationState | null;
 
@@ -61,8 +62,6 @@ export default function GameRecap() {
     }
     return scenes;
   }, [messages]);
-
-  const sessionId = location.pathname.split('/')[2];
 
   return (
     <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8">

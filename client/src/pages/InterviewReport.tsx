@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useParams, useLocation } from 'react-router-dom';
 import { getAnonymousId } from '../hooks/useAnonymousId';
 import CopyButton from '../components/CopyButton';
 import { showToast } from '../components/Toast';
@@ -19,8 +19,8 @@ interface LocationState {
 }
 
 export default function InterviewReport() {
+  const { sessionId } = useParams<{ sessionId: string }>();
   const location = useLocation();
-  const navigate = useNavigate();
   const state = location.state as LocationState | null;
 
   if (!state?.messages) {
@@ -34,7 +34,6 @@ export default function InterviewReport() {
 
   const { position, difficulty, questionCount, messages } = state;
   const anonymousId = getAnonymousId();
-  const sessionId = location.pathname.split('/')[2]; // /interview/:sessionId/report
 
   const [standardAnswers, setStandardAnswers] = useState<Record<number, { loading: boolean; content: string | null }>>({});
   const [expandedAnswers, setExpandedAnswers] = useState<Set<number>>(new Set());
@@ -95,8 +94,6 @@ export default function InterviewReport() {
       setExporting(false);
     }
   }, [exporting, prepareExportData]);
-
-  const aiBotMessages = messages.filter(m => m.role === 'assistant');
 
   return (
     <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-8">

@@ -68,16 +68,15 @@ export default function InterviewChat() {
         }
 
         // Last is user → resume
-        setMessages(msgs);
+        setMessages([...msgs, { role: 'assistant', content: '' }]);
         try {
           for await (const ev of postSse('/api/interview/resume', { anonymousId, sessionId })) {
             if (ev.type === 'chunk') {
               setMessages((prev) => {
-                const next = [...prev, { role: 'assistant' as const, content: ev.content }];
-                // Append to last assistant message or create new
+                const next = [...prev];
                 const last = next[next.length - 1];
-                if (last && last.role === 'assistant' && next.length > 1 && next[next.length - 2]?.role === 'assistant') {
-                  // This shouldn't happen with the correct initial state
+                if (last && last.role === 'assistant') {
+                  next[next.length - 1] = { ...last, content: last.content + ev.content };
                 }
                 return next;
               });
