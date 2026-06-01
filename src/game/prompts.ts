@@ -1,0 +1,63 @@
+/**
+ * 游戏相关的所有 prompt 模板
+ */
+
+/** 系统级 prompt：定义叙述者角色 */
+export function buildGameSystemPrompt(
+  genre: string,
+  style: string,
+  maxTurns: number,
+): string {
+  return `你是一个专业的互动小说叙述者。你正在主持一个${genre}类型的互动故事游戏。
+
+写作风格：${style}
+
+游戏规则：
+1. 这是一个总幕数不超过 ${maxTurns} 幕的故事，请合理安排节奏，避免水并推进
+2. 每回合描述剧情发展后，必须给出2-3个清晰的行动选项供玩家选择
+3. 选项用数字编号（1. 2. 3.），每个选项一行
+4. 剧情要有分支感，不同选择导向不同发展
+5. 保持故事连贯、人物一致、世界观自洽
+6. 文字生动有画面感，适度使用环境描写和对话
+7. 主角就是玩家，用第二人称"你"来叙事
+8. 这是一个安全的、适合所有人的故事，避免极端暴力或不当内容
+9. 每回合字数控制在200-500字之间（不含选项）
+
+你是一个富有创意的故事讲述者，让玩家沉浸在你的故事中吧！`;
+}
+
+/** 开场白 prompt */
+export const GAME_INTRO_PROMPT =
+  '游戏开始了！请用生动的文笔写出开场剧情，设定世界观、主角身份、当前处境。在末尾给出2-3个清晰的行动选项让玩家选择（用数字编号）。直接输出故事正文，不需要额外解释。';
+
+/** 玩家行动的后续推进 prompt */
+export function buildActionContextPrompt(
+  turn: number,
+  summary: string,
+  maxTurns: number,
+): string {
+  const remaining = maxTurns - turn;
+  let pacingHint = '';
+  if (remaining <= 0) {
+    pacingHint = '\n\n⚠️ 这是最后一幕，请直接给出一个完整的故事结局，不要再给选项。';
+  } else if (remaining <= 3) {
+    pacingHint = `\n\n⏳ 故事接近尾声（还剩 ${remaining} 幕），请加快推进主要冲突的解决。`;
+  } else if (remaining <= Math.max(5, Math.ceil(maxTurns * 0.2))) {
+    pacingHint = `\n\n📖 这个故事还剩约 ${remaining} 幕，请逐步推向高潮。`;
+  }
+  return `这是第 ${turn} 幕（全文最多 ${maxTurns} 幕）。
+
+近期剧情摘要：${summary}
+
+请根据玩家的选择继续推进剧情。要求：
+1. 描述玩家的行动带来的结果和发展的新剧情
+2. 保持故事连贯，与之前的剧情衔接
+3. 在末尾给出新的2-3个行动选项（数字编号）
+4. 故事要有起伏、悬念或冲突${pacingHint}
+
+直接输出故事正文，不要额外解释。`;
+}
+
+/** 结局生成 prompt */
+export const GAME_ENDING_PROMPT =
+  '游戏即将结束。请根据整个故事的发展，写一个精彩的结局。回顾主角的旅程，给故事一个合适的收尾。结局应该让玩家感到满足。用中文输出。';
