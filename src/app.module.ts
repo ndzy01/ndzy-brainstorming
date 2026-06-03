@@ -4,6 +4,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Client } from 'pg';
 import { AiModule } from './ai/ai.module';
 import { UserModule } from './user/user.module';
 import { InterviewModule } from './interview/interview.module';
@@ -11,6 +12,22 @@ import { GameModule } from './game/game.module';
 import { User } from './entities/user.entity';
 import { InterviewSession } from './entities/interview-session.entity';
 import { GameSession } from './entities/game-session.entity';
+
+const DB_SCHEMA = 'ndzy_brainstorming';
+
+async function ensureSchema(): Promise<void> {
+  const client = new Client({
+    host: process.env.DB_HOST,
+    port: 5432,
+    user: 'neondb_owner',
+    password: process.env.DB_PASSWORD,
+    database: 'neondb',
+    ssl: true,
+  });
+  await client.connect();
+  await client.query(`CREATE SCHEMA IF NOT EXISTS "${DB_SCHEMA}"`);
+  await client.end();
+}
 
 const imports: any[] = [
   ThrottlerModule.forRoot({
@@ -25,16 +42,22 @@ const imports: any[] = [
   UserModule,
   InterviewModule,
   GameModule,
-  TypeOrmModule.forRoot({
-    type: 'postgres',
-    port: 5432,
-    host: process.env.DB_HOST,
-    username: 'neondb_owner',
-    password: process.env.DB_PASSWORD,
-    database: 'neondb',
-    ssl: true,
-    entities: [User, InterviewSession, GameSession],
-    synchronize: true,
+  TypeOrmModule.forRootAsync({
+    useFactory: async () => {
+      await ensureSchema();
+      return {
+        type: 'postgres',
+        port: 5432,
+        host: process.env.DB_HOST,
+        username: 'neondb_owner',
+        password: process.env.DB_PASSWORD,
+        database: 'neondb',
+        schema: DB_SCHEMA,
+        ssl: true,
+        entities: [User, InterviewSession, GameSession],
+        synchronize: true,
+      };
+    },
   }),
 ];
 
